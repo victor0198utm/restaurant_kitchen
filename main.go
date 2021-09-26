@@ -83,7 +83,7 @@ func make_dishes(order Order, preparation_time int) {
 		log.Fatal(err_marshall)
 	}
 
-	resp, err := http.Post("http://localhost:8002/distribution", "application/json",
+	resp, err := http.Post("http://hall:8002/distribution", "application/json",
 		bytes.NewBuffer(json_data))
 	if err != nil {
 		log.Fatal(err)
