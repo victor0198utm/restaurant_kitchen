@@ -5,39 +5,27 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math/rand"
 	"net/http"
+	"strconv"
+	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
+	app_data "github.com/victor0198utm/restaurant_kitchen/appData"
+	"github.com/victor0198utm/restaurant_kitchen/models"
 )
 
-type Cooking_details_type struct {
-	Food_id int `json:"food_id"`
-	Cook_id int `json:"cook_id"`
-}
+var w sync.WaitGroup
 
-type Order struct {
-	Order_id     int   `json:"order_id"`
-	Table_id     int   `json:"table_id"`
-	Waiter_id    int   `json:"waiter_id"`
-	Items        []int `json:"items"`
-	Priority     int   `json:"priority"`
-	Max_wait     int   `json:"max_wait"`
-	Pick_up_time int   `json:"pick_up_time"`
-}
+var m sync.Mutex
 
-type Kitchen_response struct {
-	Order_id        int                    `json:"order_id"`
-	Table_id        int                    `json:"table_id"`
-	Waiter_id       int                    `json:"waiter_id"`
-	Items           []int                  `json:"items"`
-	Priority        int                    `json:"priority"`
-	Max_wait        int                    `json:"max_wait"`
-	Pick_up_time    int                    `json:"pick_up_time"`
-	Cooking_time    int                    `json:"cooking_time"`
-	Cooking_details []Cooking_details_type `json:"cooking_details"`
-}
+var receivedOrders = []models.Order{}
+var dishesReady = []models.KitchenResponse{}
+
+var activity = []int{}
+
+var stoves = []models.Aparatus{{0}, {0}}
+var ovens = []models.Aparatus{{0}}
 
 func call_kitchen(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Endpoint Hit: Kitchen")
@@ -46,51 +34,308 @@ func call_kitchen(w http.ResponseWriter, r *http.Request) {
 
 func post_order(w http.ResponseWriter, r *http.Request) {
 	// get order from request body
-	var order Order
-	err := json.NewDecoder(r.Body).Decode(&order)
+
+	var newOrder models.Order
+	err := json.NewDecoder(r.Body).Decode(&newOrder)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// process the order in a separate thread
-	fmt.Print(time.Now().Clock())
-	fmt.Print(": Started to process the order with id: ")
-	fmt.Println(order.Order_id)
-	go process_order(order)
+	fmt.Println("Received order with id: ", newOrder.Order_id, "| ", newOrder)
 
+	go addOrder(newOrder)
 }
 
-func process_order(order Order) {
-	// processing logic
+func addOrder(newOrder models.Order) {
+	m.Lock()
+	receivedOrders = append(receivedOrders, newOrder)
 
-	// sleep for 3-10 seconds
-	preparation_time := rand.Intn(7) + 3
-	time.Sleep(time.Duration(preparation_time) * time.Second)
-
-	// finished
-	make_dishes(order, preparation_time)
-}
-
-func make_dishes(order Order, preparation_time int) {
-	items := []int{3, 4, 4, 2}
-	cooking_details := []Cooking_details_type{
-		{3, 1}, {4, 1}, {4, 2}, {2, 3},
+	kr := models.KitchenResponse{
+		newOrder.Order_id,
+		newOrder.Table_id,
+		newOrder.Waiter_id,
+		[]int{},
+		newOrder.Priority,
+		newOrder.Max_wait,
+		newOrder.Pick_up_time,
+		0,
+		[]models.CookingDetails{},
 	}
-	the_finished_order := Kitchen_response{order.Order_id, 1, 1, items, 3, 45, 1631453140, 65, cooking_details}
-	json_data, err_marshall := json.Marshal(the_finished_order)
+
+	kr.Items = append(kr.Items, newOrder.Items...)
+
+	dishesReady = append(dishesReady, kr)
+
+	m.Unlock()
+}
+
+func removeOrder(s []models.Order, index int) []models.Order {
+	return append(s[:index], s[index+1:]...)
+}
+
+func removeResponse(s []models.KitchenResponse, index int) []models.KitchenResponse {
+	return append(s[:index], s[index+1:]...)
+}
+
+func removeDishId(s []int, index int) []int {
+	return append(s[:index], s[index+1:]...)
+}
+
+func cook(cook_id int) {
+	// coordinates := []Table_Order{}
+	me := app_data.GetCook(cook_id)
+
+	fmt.Println(me.Name, "started to work.\n")
+	for {
+		time.Sleep(1 * time.Second)
+
+		if cook_id == 1 {
+			fmt.Println("\n---Current waiting orders:", receivedOrders)
+			fmt.Println("---Stoves:", stoves)
+			fmt.Println("---Ovens:", ovens)
+			fmt.Println("---Current waiting responses:", dishesReady, "\n")
+		}
+
+		if me.Proficiency > activity[cook_id] {
+			chosenOrderIdx := -1
+			highestPriorityValue := 0
+			chosenDishIdx := 0
+			timeWaited := 0
+			m.Lock()
+
+			// send completed orders to hall
+			for dr_idx := 0; dr_idx < len(dishesReady); dr_idx++ {
+				if len(dishesReady[dr_idx].Items) == len(dishesReady[dr_idx].Cooking_details) {
+					fmt.Print("have to remove", dishesReady[dr_idx].Order_id)
+
+					return_order(dishesReady[dr_idx])
+
+					for j := 0; j < len(receivedOrders); j++ {
+						if receivedOrders[j].Order_id == dishesReady[dr_idx].Order_id {
+							receivedOrders = removeOrder(receivedOrders, j)
+						}
+					}
+
+					dishesReady = removeResponse(dishesReady, dr_idx)
+
+				}
+			}
+
+			// pick dish and prepare
+			for j := 0; j < len(receivedOrders); j++ {
+
+				if len(receivedOrders[j].Items) == 0 {
+					continue
+				}
+
+				// pick an order to select a dish.
+				// choose the higher priority order,
+				// but dont let the lower priority order to wait for too long to start working on.
+
+				// priority   | allowWait
+				// 1          | 4
+				// 2          | 3
+				// 3          | 2
+				// 4          | 1
+				// 5          | 0
+				timeWaited = int(time.Now().Unix()) - receivedOrders[j].Pick_up_time
+				allowWait := 5 - receivedOrders[j].Priority
+				if timeWaited > allowWait {
+
+					// fmt.Println("|", receivedOrders[j])
+					chosenDishIdx = search_dish_to_make(receivedOrders[j], me.Rank)
+					// fmt.Println("Time|", chosenDishIdx)
+
+					if chosenDishIdx >= 0 {
+						dish := app_data.GetDish(receivedOrders[j].Items[chosenDishIdx] - 1)
+						success := get_aparatus(dish.Cooking_aparatus)
+
+						if success {
+							chosenOrderIdx = j
+							break
+						}
+					}
+				}
+
+				if receivedOrders[j].Priority > highestPriorityValue {
+					highestPriorityValue = receivedOrders[j].Priority
+					chosenOrderIdx = j
+
+					// fmt.Println("||", receivedOrders[j])
+					chosenDishIdx = search_dish_to_make(receivedOrders[j], me.Rank)
+					// fmt.Println("Priority|", chosenDishIdx)
+
+					if chosenDishIdx >= 0 {
+						dish := app_data.GetDish(receivedOrders[j].Items[chosenDishIdx] - 1)
+						success := get_aparatus(dish.Cooking_aparatus)
+
+						if success {
+							highestPriorityValue = receivedOrders[j].Priority
+							chosenOrderIdx = j
+							break
+						}
+					}
+				}
+			}
+
+			if chosenDishIdx == -1 {
+				fmt.Println("No dish in order ", receivedOrders[chosenOrderIdx].Order_id)
+			} else if chosenDishIdx == -2 {
+				fmt.Println("Too high rank. Orders: ", receivedOrders[chosenOrderIdx])
+			}
+
+			if chosenOrderIdx > -1 && chosenDishIdx >= 0 {
+
+				cause := " highest priority: " + strconv.Itoa(highestPriorityValue)
+				if highestPriorityValue == 0 {
+					cause = " waited " + strconv.Itoa(timeWaited) + "s"
+				}
+				fmt.Print(
+					"Cook:",
+					cook_id,
+					" took oder:",
+					receivedOrders[chosenOrderIdx].Order_id)
+				fmt.Print(
+					"dish idx:",
+					receivedOrders[chosenOrderIdx].Items[chosenDishIdx],
+					". Cause:",
+					cause,
+					"\n")
+
+				dishesInOrder := receivedOrders[chosenOrderIdx].Items
+				dishToMake := dishesInOrder[chosenDishIdx]
+				dishesInOrder = removeDishId(dishesInOrder, chosenDishIdx)
+				receivedOrders[chosenOrderIdx].Items = dishesInOrder
+
+				activity[cook_id] = activity[cook_id] + 1
+				w.Add(1)
+				go prepareDish(dishToMake, cook_id, receivedOrders[chosenOrderIdx].Order_id)
+
+			}
+
+			m.Unlock()
+
+		}
+	}
+
+	w.Done()
+}
+
+func get_aparatus(aparatus string) bool {
+
+	if aparatus == "" {
+		return true
+	}
+
+	if aparatus == "stove" {
+		for i := 0; i < len(stoves); i++ {
+			if stoves[i].State == 0 {
+				stoves[i].State = 1
+				return true
+			}
+		}
+	}
+
+	if aparatus == "oven" {
+		for i := 0; i < len(ovens); i++ {
+			if ovens[i].State == 0 {
+				ovens[i].State = 1
+				return true
+			}
+		}
+	}
+
+	return false
+
+}
+
+func release_aparatus(aparatus string) {
+
+	if aparatus == "stove" {
+		for i := 0; i < len(stoves); i++ {
+			if stoves[i].State == 1 {
+				stoves[i].State = 0
+			}
+		}
+	}
+
+	if aparatus == "oven" {
+		for i := 0; i < len(ovens); i++ {
+			if ovens[i].State == 1 {
+				ovens[i].State = 0
+			}
+		}
+	}
+
+}
+
+func search_dish_to_make(order models.Order, rank int) int {
+
+	dishes := order.Items
+	if len(dishes) == 0 {
+		return -1 // no more dishes in order
+	}
+
+	for dish_idx := 0; dish_idx < len(dishes); dish_idx++ {
+		dish := app_data.GetDish(dishes[dish_idx] - 1)
+		// fmt.Println("Dish:", dish, " |dc", dish.Complexity, " |r", rank)
+		if dish.Complexity == rank || dish.Complexity == rank-1 {
+			return dish_idx
+		}
+	}
+	return -2 // rank too high
+}
+
+func prepareDish(dish_id int, cook_id int, order_id int) {
+	fmt.Println("working on dish", dish_id)
+	dish := app_data.GetDish(dish_id - 1)
+
+	time.Sleep(time.Duration(dish.Preparation_time) * time.Second)
+
+	m.Lock()
+	activity[cook_id] = activity[cook_id] - 1
+
+	for dr_idx := 0; dr_idx < len(dishesReady); dr_idx++ {
+		if dishesReady[dr_idx].Order_id == order_id {
+			dishesReady[dr_idx].Cooking_details = append(dishesReady[dr_idx].Cooking_details, models.CookingDetails{dish_id, cook_id})
+		}
+	}
+	release_aparatus(dish.Cooking_aparatus)
+	m.Unlock()
+
+	fmt.Println("Cook ", cook_id, " finished dish ", dish_id)
+	w.Done()
+}
+
+// func process_order(order models.Order) {
+// 	// processing logic
+
+// 	// sleep for 3-10 seconds
+// 	preparation_time := rand.Intn(5) + 5
+// 	time.Sleep(time.Duration(preparation_time) * time.Second)
+
+// 	// finished
+// 	make_dishes(order, preparation_time)
+// }
+
+func return_order(response models.KitchenResponse) {
+
+	response.Cooking_time = int(time.Now().Unix()) - response.Pick_up_time
+
+	json_data, err_marshall := json.Marshal(response)
 	if err_marshall != nil {
 		log.Fatal(err_marshall)
 	}
 
-	resp, err := http.Post("http://hall:8002/distribution", "application/json",
+	resp, err := http.Post("http://localhost:8002/distribution", "application/json",
 		bytes.NewBuffer(json_data))
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	fmt.Print(time.Now().Clock())
-	fmt.Printf(": Dishes sent to hall. Took %d seconds. Order id: %d. Status: %d.\n", preparation_time, order.Order_id, resp.StatusCode)
+	fmt.Printf("Dishes sent to hall. Took %d seconds. Order id: %d. Status: %d.\n", response, resp.StatusCode)
 }
 
 func handleRequests() {
@@ -101,6 +346,18 @@ func handleRequests() {
 }
 
 func main() {
-	rand.Seed(1583)
+	n_cooks := 5
+	// Initialize cooks
+	for i := 0; i < n_cooks; i++ {
+		activity = append(activity, 0)
+	}
+
+	for i := 0; i < n_cooks; i++ {
+		w.Add(1)
+		go cook(i)
+	}
+
 	handleRequests()
+
+	w.Wait()
 }
