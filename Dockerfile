@@ -6,10 +6,12 @@ COPY go.mod ./
 COPY go.sum ./
 RUN go mod download
 
-COPY *.go ./
+COPY . ./
 
-RUN go build -o /kitchen_app
+RUN go build -o /restaurant_kitchen
 
 EXPOSE 8081
 
-CMD [ "/kitchen_app" ]
+CMD [ "/restaurant_kitchen" ]
+
+

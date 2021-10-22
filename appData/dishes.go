@@ -1,4 +1,4 @@
-package app_data
+package appData
 
 import (
 	"github.com/victor0198utm/restaurant_kitchen/models"

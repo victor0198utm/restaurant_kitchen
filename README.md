@@ -1,6 +1,6 @@
 # Kitchen web app
-
-
+Dining Hall app: <https://github.com/victor0198utm/restaurant_hall>
+## Run simulation
 ### 1.Make network 
 '''
 docker network create rNet --driver bridge
@@ -14,7 +14,7 @@ docker build --tag kitchen .
 
 ### 3. Run Kitchen container
 '''
-docker run -dit --name kitchen --network rNet kitchen
+docker run -it --name kitchen --network rNet kitchen
 '''
 
 ### 4. Build Hall app
@@ -29,6 +29,4 @@ docker run -it --name hall --network rNet hall
 '''
 
 ## Output
-After starting the Hall container, it will make 10 requests to the kitchen. This is logged in container's std output. The Kitchen container also logs the receiving of the requests and the made requests.
-
-<img title="Applications' logs" alt="Applications' logs" src="/examples/example_1.png">
+<img title="Applications' logs" alt="Applications' logs" src="/example/example_2.png">
