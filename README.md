@@ -29,4 +29,4 @@ docker run -it --name hall --network rNet hall
 '''
 
 ## Output
-<img title="Applications' logs" alt="Applications' logs" src="/example/example_2.png">
+<img title="Applications' logs" alt="Applications' logs" src="/examples/example_2.png">
