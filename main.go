@@ -324,7 +324,8 @@ func return_order(response models.KitchenResponse) {
 		log.Fatal(err_marshall)
 	}
 
-	resp, err := http.Post("http://hall:8002/distribution", "application/json",
+	// resp, err := http.Post("http://"+appData.GetHallAddress()+"/distribution", "application/json",
+	resp, err := http.Post("http://"+appData.GetHallAddress()+"/distribution", "application/json",
 		bytes.NewBuffer(json_data))
 	if err != nil {
 		log.Fatal(err)
@@ -347,7 +348,7 @@ func handleRequests() {
 	myRouter := mux.NewRouter().StrictSlash(true)
 	myRouter.HandleFunc("/", call_kitchen).Methods("GET")
 	myRouter.HandleFunc("/order", post_order).Methods("POST")
-	log.Fatal(http.ListenAndServe(":8001", myRouter))
+	log.Fatal(http.ListenAndServe(":8021", myRouter))
 }
 
 func main() {

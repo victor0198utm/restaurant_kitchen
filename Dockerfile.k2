@@ -6,11 +6,11 @@ COPY go.mod ./
 COPY go.sum ./
 RUN go mod download
 
-COPY . ./
+COPY *.go ./
+COPY /appDataK2 ./appData
+COPY /models ./models
 
 RUN go build -o /restaurant_kitchen
-
-EXPOSE 8081
 
 CMD [ "/restaurant_kitchen" ]
 
