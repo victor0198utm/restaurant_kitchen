@@ -24,8 +24,8 @@ var dishesReady = []models.KitchenResponse{}
 
 var activity = []int{}
 
-var stoves = []models.Aparatus{{0}, {0}}
-var ovens = []models.Aparatus{{0}, {0}}
+var stoves = []models.Aparatus{}
+var ovens = []models.Aparatus{}
 
 func call_kitchen(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Endpoint Hit: Kitchen")
@@ -93,7 +93,7 @@ func cook(cook_id int) {
 
 		if me.Proficiency > activity[cook_id] {
 			chosenOrderIdx := -1
-			highestPriorityValue := 0
+			// highestPriorityValue := 0
 			chosenDishIdx := 0
 			timeWaited := 0
 			m.Lock()
@@ -115,28 +115,19 @@ func cook(cook_id int) {
 				}
 			}
 
-			// pick dish and prepare
-			for j := 0; j < len(receivedOrders); j++ {
+			cause := ""
 
+			// pick dish if it has waited for too long
+			for j := 0; j < len(receivedOrders); j++ {
 				if len(receivedOrders[j].Items) == 0 {
 					continue
 				}
 
-				// pick an order to select a dish.
-				// choose the higher priority order,
-				// but dont let the lower priority order to wait for too long to start working on.
-
-				// priority   | allowWait
-				// 1          | 4
-				// 2          | 3
-				// 3          | 2
-				// 4          | 1
-				// 5          | 0
 				timeWaited = int(time.Now().Unix()) - receivedOrders[j].Pick_up_time
-				allowWait := 5 - receivedOrders[j].Priority
-				if timeWaited > allowWait {
+				allowWait := receivedOrders[j].Max_wait - int(float64(receivedOrders[j].Max_wait*100)/130)
+				if timeWaited >= allowWait {
 
-					// fmt.Println("|", receivedOrders[j])
+					fmt.Println("TW", timeWaited, "|AW", allowWait)
 					chosenDishIdx = search_dish_to_make(receivedOrders[j], me.Rank)
 					// fmt.Println("Time|", chosenDishIdx)
 
@@ -146,45 +137,48 @@ func cook(cook_id int) {
 
 						if success {
 							chosenOrderIdx = j
+							cause = "waited for too long" + strconv.Itoa(timeWaited) + "s"
 							break
 						}
 					}
 				}
+			}
 
-				if receivedOrders[j].Priority > highestPriorityValue {
-					highestPriorityValue = receivedOrders[j].Priority
-					chosenOrderIdx = j
-
-					// fmt.Println("||", receivedOrders[j])
-					chosenDishIdx = search_dish_to_make(receivedOrders[j], me.Rank)
-					// fmt.Println("Priority|", chosenDishIdx)
-
-					if chosenDishIdx >= 0 {
-						dish := appData.GetDish(receivedOrders[j].Items[chosenDishIdx] - 1)
-						success := get_aparatus(dish.Cooking_aparatus)
-
-						if success {
-							highestPriorityValue = receivedOrders[j].Priority
-							chosenOrderIdx = j
-							break
+			// if there was no picked dish
+			// pick dish which has shotest preparation time
+			if chosenOrderIdx == -1 {
+				smallestTimeOrderIdx := -1
+				smallestTimeDishIdx := -1
+				smallestTime := 120
+				for j := 0; j < len(receivedOrders); j++ {
+					dishes := receivedOrders[j].Items
+					for dish_idx := 0; dish_idx < len(dishes); dish_idx++ {
+						dish := appData.GetDish(dishes[dish_idx] - 1)
+						if dish.Complexity == me.Rank || dish.Complexity == me.Rank-1 {
+							if dish.Preparation_time < smallestTime {
+								smallestTime = dish.Preparation_time
+								smallestTimeDishIdx = dish_idx
+								smallestTimeOrderIdx = j
+							}
 						}
 					}
+				}
+				if smallestTimeOrderIdx > -1 {
+					chosenOrderIdx = smallestTimeOrderIdx
+					chosenDishIdx = smallestTimeDishIdx
+					cause = "has smallest preparation time"
 				}
 			}
 
 			if chosenDishIdx == -1 {
 				fmt.Println("No dish in order ", receivedOrders[chosenOrderIdx].Order_id)
 			} else if chosenDishIdx == -2 {
-				fmt.Println("Too low or high rank. Cook:", me.Name, " Orders: ", receivedOrders[chosenOrderIdx])
+				fmt.Println("Too low or high rank. Cook:", me.Name)
 			}
 
 			if chosenOrderIdx > -1 && chosenDishIdx >= 0 {
 
 				if chosenDishIdx < len(receivedOrders[chosenOrderIdx].Items) {
-					cause := " highest priority: " + strconv.Itoa(highestPriorityValue)
-					if highestPriorityValue == 0 {
-						cause = " waited " + strconv.Itoa(timeWaited) + "s"
-					}
 
 					ro := receivedOrders[chosenOrderIdx]
 					fmt.Print(
@@ -283,6 +277,25 @@ func search_dish_to_make(order models.Order, rank int) int {
 	return -2 // rank too low or high
 }
 
+func search_dishe_by_time(order models.Order, rank int) int {
+
+	smallestTimeDishIdx := -1
+	smallestTime := 120
+
+	dishes := order.Items
+
+	for dish_idx := 0; dish_idx < len(dishes); dish_idx++ {
+		dish := appData.GetDish(dishes[dish_idx] - 1)
+		if dish.Complexity == rank || dish.Complexity == rank-1 {
+			if dish.Preparation_time < smallestTime {
+				smallestTime = dish.Preparation_time
+				smallestTimeDishIdx = dish_idx
+			}
+		}
+	}
+	return smallestTimeDishIdx // rank too low or high
+}
+
 func prepareDish(dish_id int, cook_id int, order_id int) {
 	fmt.Println("working on dish", dish_id)
 	dish := appData.GetDish(dish_id - 1)
@@ -304,17 +317,6 @@ func prepareDish(dish_id int, cook_id int, order_id int) {
 	w.Done()
 }
 
-// func process_order(order models.Order) {
-// 	// processing logic
-
-// 	// sleep for 3-10 seconds
-// 	preparation_time := rand.Intn(5) + 5
-// 	time.Sleep(time.Duration(preparation_time) * time.Second)
-
-// 	// finished
-// 	make_dishes(order, preparation_time)
-// }
-
 func return_order(response models.KitchenResponse) {
 
 	response.Cooking_time = int(time.Now().Unix()) - response.Pick_up_time
@@ -331,7 +333,7 @@ func return_order(response models.KitchenResponse) {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("Dishes sent to hall. Took %d seconds. Order id: %d. Status: %d.\n", response, resp.StatusCode)
+	fmt.Printf("Dishes sent to hall. Took %d seconds. Order id: %d. Status: %d.\n", response.Cooking_time, response, resp.StatusCode)
 }
 
 func print_resources() {
@@ -352,8 +354,18 @@ func handleRequests() {
 }
 
 func main() {
-	n_cooks := 4
+	// Initialize stoves
+	for i := 0; i < appData.XStoves(); i++ {
+		stoves = append(stoves, models.Aparatus{0})
+	}
+
+	// Initialize ovens
+	for i := 0; i < appData.XOvens(); i++ {
+		ovens = append(ovens, models.Aparatus{0})
+	}
+
 	// Initialize cooks
+	n_cooks := appData.XCooks()
 	for i := 0; i < n_cooks; i++ {
 		activity = append(activity, 0)
 	}
