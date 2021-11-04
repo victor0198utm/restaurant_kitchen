@@ -12,6 +12,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/victor0198utm/restaurant_kitchen/appData"
+	appData "github.com/victor0198utm/restaurant_kitchen/appDataK1"
 	"github.com/victor0198utm/restaurant_kitchen/models"
 )
 
@@ -348,11 +349,11 @@ func handleRequests() {
 	myRouter := mux.NewRouter().StrictSlash(true)
 	myRouter.HandleFunc("/", call_kitchen).Methods("GET")
 	myRouter.HandleFunc("/order", post_order).Methods("POST")
-	log.Fatal(http.ListenAndServe(":8021", myRouter))
+	log.Fatal(http.ListenAndServe(":"+appData.GetKitchenPort(), myRouter))
 }
 
 func main() {
-	n_cooks := 5
+	n_cooks := 4
 	// Initialize cooks
 	for i := 0; i < n_cooks; i++ {
 		activity = append(activity, 0)
