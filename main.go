@@ -12,7 +12,6 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/victor0198utm/restaurant_kitchen/appData"
-	appData "github.com/victor0198utm/restaurant_kitchen/appDataK1"
 	"github.com/victor0198utm/restaurant_kitchen/models"
 )
 
