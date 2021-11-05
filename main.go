@@ -89,7 +89,7 @@ func cook(cook_id int) {
 
 	fmt.Println(me.Name, "started to work.\n")
 	for {
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 
 		if me.Proficiency > activity[cook_id] {
 			chosenOrderIdx := -1
@@ -125,9 +125,9 @@ func cook(cook_id int) {
 
 				timeWaited = int(time.Now().Unix()) - receivedOrders[j].Pick_up_time
 				allowWait := receivedOrders[j].Max_wait - int(float64(receivedOrders[j].Max_wait*100)/130)
-				if timeWaited >= allowWait {
+				if timeWaited >= allowWait-2 {
 
-					fmt.Println("TW", timeWaited, "|AW", allowWait)
+					// fmt.Println("TW", timeWaited, "|AW", allowWait)
 					chosenDishIdx = search_dish_to_make(receivedOrders[j], me.Rank)
 					// fmt.Println("Time|", chosenDishIdx)
 

@@ -1,7 +1,7 @@
 package appData
 
 func XCooks() int {
-	return 5
+	return 4
 }
 
 func XStoves() int {

@@ -1,9 +1,9 @@
 package appData
 
 func GetHallAddress() string {
-	return "localhost:8031"
+	return "localhost:8002"
 }
 
 func GetKitchenPort() string {
-	return "8021"
+	return "8001"
 }
